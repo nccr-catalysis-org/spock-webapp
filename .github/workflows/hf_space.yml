@@ -11,6 +11,7 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+          submodules: 'recursive'
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
