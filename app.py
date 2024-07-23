@@ -25,12 +25,24 @@ def check_columns(df: pd.DataFrame) -> None:
 
 # Cache the function to run spock with the provided dataframe and arguments
 @st.cache_data(
-    show_spinner=False, hash_funcs={pd.DataFrame: lambda df: df.to_numpy().tobytes()}
+    show_spinner=False,
+    # hash_funcs={pd.DataFrame: lambda df: df.to_numpy().tobytes()},
 )
-def run_fn(df, *args, **kwargs) -> str:
-    check_columns(df)
-    fig, ax = run_spock_from_args(df, *args, **kwargs)
-    return fig
+def cached_run_fn(df, wp, verb, imputer_strat, plotmode, seed, prefit, setcbms):
+    with capture_stdout_with_timestamp() as stdout_io:
+        fig, _ = run_spock_from_args(
+            df,
+            wp=wp,
+            verb=verb,
+            imputer_strat=imputer_strat,
+            plotmode=plotmode,
+            seed=seed,
+            prefit=prefit,
+            setcbms=setcbms,
+            fig=None,
+            ax=None,
+        )
+    return fig, stdout_io.getvalue()
 
 
 # Mock function for testing purposes
@@ -73,11 +85,67 @@ def capture_stdout_with_timestamp():
         sys.stdout = old_stdout
 
 
-# Main function to run the Streamlit app
+@st.experimental_dialog("Import Data")
+def import_data():
+    st.write("Choose a dataset or upload your own file")
+
+    option = st.radio("Select an option:", ["Use example dataset", "Upload file"])
+
+    if option == "Use example dataset":
+        examples = {
+            "Sabatier": "examples/sabatier.csv",
+            # Add more examples here
+        }
+        selected_example = st.selectbox(
+            "Choose an example dataset", list(examples.keys())
+        )
+        if st.button("Load Example"):
+            df = pd.read_csv(examples[selected_example])
+            st.session_state.df = df
+            st.rerun()
+    else:
+        uploaded_file = st.file_uploader(
+            "Upload a CSV or Excel file", type=["csv", "xlsx"]
+        )
+        if uploaded_file is not None:
+            try:
+                df = load_data(uploaded_file)
+                st.session_state.df = df
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error loading file: {e}")
+
+
 def main():
     st.title("Navicat Spock")
-    st.subheader("A tool for generating volcano plots from your data")
+    st.subheader("Generate volcano plots from your data")
 
+    # Instructions
+    with st.expander("Instructions", expanded=False):
+        st.markdown(
+            """
+            1. Click "Import Data" to upload a file or select an example dataset.
+            2. Review your data in the table.
+            3. Adjust the plot settings in the sidebar if needed.
+            4. Click "Generate plot" to create your plot.
+            5. View the generated plot and logs in the respective tabs.
+            """
+        )
+
+    if "df" not in st.session_state:
+        if st.button("Import Data"):
+            import_data()
+        st.stop()
+
+    # Display the data
+    st.header("Review the data")
+    st.dataframe(st.session_state.df, use_container_width=True)
+
+    # Option to import new data
+    if st.button("Import New Data"):
+        import_data()
+
+    # Settings
     with st.sidebar:
         st.header("Settings")
 
@@ -123,52 +191,27 @@ def main():
         prefit = st.toggle("Prefit", value=False)
         setcbms = st.toggle("CBMS", value=True)
 
-    with st.expander("Instructions"):
-        st.markdown(
-            """
-            1. Upload your data in an Excel or CSV file.
-            2. View and curate your data in the table below.
-            3. Click "Run Plot" to generate your plot.
-            4. View the generated plot and all the associated logs in the respective tabs.
-            """
-        )
+    # Run the plot
+    st.header("Generate plot")
+    if st.button("Generate plot"):
+        with st.spinner("Generating plot..."):
+            fig, logs = cached_run_fn(
+                st.session_state.df,
+                wp=wp,
+                verb=verb,
+                imputer_strat=imputer_strat,
+                plotmode=plotmode,
+                seed=seed,
+                prefit=prefit,
+                setcbms=setcbms,
+            )
 
-    uploaded_file = st.file_uploader(
-        "Choose a file", type=["csv", "xlsx"], accept_multiple_files=False
-    )
-
-    if uploaded_file is not None:
-        try:
-            df = load_data(uploaded_file)
-            st.markdown("### Data")
-            st.dataframe(df, use_container_width=True)
-
-            if st.button("Run Plot"):
-                with st.spinner("Generating plot..."):
-                    with capture_stdout_with_timestamp() as stdout_io:
-                        result = run_fn(
-                            df,
-                            wp=wp,
-                            verb=verb,
-                            imputer_strat=imputer_strat,
-                            plotmode=plotmode,
-                            seed=seed,
-                            prefit=prefit,
-                            setcbms=setcbms,
-                            fig=None,
-                            ax=None,
-                        )
-
-                    st.markdown("### Result")
-                    plot, logs = st.tabs(["Plot", "Logs"])
-                    with plot:
-                        st.pyplot(result)
-                    with logs:
-                        st.code(stdout_io.getvalue(), language="bash")
-        except Exception as e:
-            st.toast(f":red[{e}]", icon="🚨")
-    else:
-        st.write("Please first upload a file to generate the volcano plot.")
+        st.header("Results")
+        plot, logs_tab = st.tabs(["Plot", "Logs"])
+        with plot:
+            st.pyplot(fig)
+        with logs_tab:
+            st.code(logs, language="bash")
 
 
 if __name__ == "__main__":
