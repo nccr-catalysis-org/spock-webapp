@@ -273,9 +273,9 @@ def main():
 
         plotmode = st.number_input(
             "Plot Mode",
-            min_value=0,
+            min_value=1,
             max_value=3,
-            value=1,
+            value=2,
             help="Different plot modes",
         )
         seed = st.number_input(
