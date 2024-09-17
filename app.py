@@ -244,7 +244,6 @@ def main():
 
         wp = st.number_input(
             "Weighting Power",
-            min_value=0,
             value=1,
             help="The weighting power is the tuning parameter to fit the line segments on the data. Default value is set to 1. We recommend to vary this value between 0-3 for desired results.",
         )
